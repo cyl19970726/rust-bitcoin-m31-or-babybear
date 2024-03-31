@@ -8,6 +8,8 @@ pub use u31::*;
 mod u31_ext;
 pub use u31_ext::*;
 
+mod fri;
+
 define_pushable!();
 
 pub fn unroll<F, T>(count: u32, mut closure: F) -> Vec<T>

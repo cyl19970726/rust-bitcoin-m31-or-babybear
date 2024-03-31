@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bitcoin-script = { git = "https://github.com/BitVM/rust-bitcoin-script" }
+bitcoin-script = { git = "https://github.com/BitVM/rust-bitcoin-script", branch = "script_macro" }
 bitcoin = { git = "https://github.com/stevenroose/rust-bitcoin", rev = "639d552ef0080a68b1ea883298aa30c450d9ff0d" }
 bitcoin-scriptexec = { git = "https://github.com/BitVM/rust-bitcoin-scriptexec/" }
 
@@ -14,6 +14,8 @@ rand = "0.8.5"
 p3-baby-bear = { git = "https://github.com/Plonky3/Plonky3" }
 p3-field = { git = "https://github.com/Plonky3/Plonky3" }
 p3-mersenne-31 = { git = "https://github.com/Plonky3/Plonky3" }
+winterfell = { git = "https://github.com/facebook/winterfell" }
+hex = "0.4.3"
 
 [profile.release]
 opt-level = 3
