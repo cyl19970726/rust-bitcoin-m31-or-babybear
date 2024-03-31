@@ -11,7 +11,7 @@ pub use babybear::*;
 pub trait U31Config {
     const MOD: u32;
 }
-
+// If less than zero, add MOD to the result
 fn u31_adjust<M: U31Config>() -> Script {
     script! {
         OP_DUP
@@ -126,6 +126,9 @@ mod test {
                 { sum_m31 }
                 OP_EQUAL
             };
+            println!("{:X}", M31::MOD);
+            println!("{:?}",script.to_string());
+            
             let exec_result = execute_script(script);
             assert!(exec_result.success);
         }
