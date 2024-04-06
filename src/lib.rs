@@ -1,7 +1,8 @@
-use bitcoin::{hashes::Hash, TapLeafHash, Transaction};
+use bitcoin::{hashes::Hash, TapLeafHash, Transaction as TX};
 use bitcoin_script::define_pushable;
 use bitcoin_scriptexec::{Exec, ExecCtx, ExecutionResult, Options, TxTemplate};
-
+use bitcoin::blockdata::transaction::Transaction;
+use bitcoin::blockdata::transaction;
 mod u31;
 pub use u31::*;
 
@@ -31,7 +32,7 @@ pub fn execute_script(script: bitcoin::ScriptBuf) -> ExecutionResult {
         Options::default(),
         TxTemplate {
             tx: Transaction {
-                version: bitcoin::transaction::Version::TWO,
+                version: transaction::Version::TWO,
                 lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
                 input: vec![],
                 output: vec![],
@@ -42,6 +43,38 @@ pub fn execute_script(script: bitcoin::ScriptBuf) -> ExecutionResult {
         },
         script,
         vec![],
+    )
+    .expect("error creating exec");
+
+    loop {
+        if exec.exec_next().is_err() {
+            break;
+        }
+    }
+    let res = exec.result().unwrap();
+    res.clone()
+}
+
+pub fn execute_script_with_inputs(
+    script: bitcoin::ScriptBuf,
+    witness: Vec<Vec<u8>>,
+) -> ExecutionResult {
+    let mut exec = Exec::new(
+        ExecCtx::Tapscript,
+        Options::default(),
+        TxTemplate {
+            tx: Transaction {
+                version: bitcoin::transaction::Version::TWO,
+                lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
+                input: vec![],
+                output: vec![],
+            },
+            prevouts: vec![],
+            input_idx: 0,
+            taproot_annex_scriptleaf: Some((TapLeafHash::all_zeros(), None)),
+        },
+        script,
+        witness,
     )
     .expect("error creating exec");
 

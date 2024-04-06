@@ -1,2 +1,2 @@
-mod leaf;
 mod bit_commitment;
+mod leaf;
