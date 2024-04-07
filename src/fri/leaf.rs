@@ -21,7 +21,7 @@ use winterfell::math::{fields::f64::BaseElement, FieldElement};
 //     fn hash(&self) -> Vec<u8>;
 // }
 
-struct EvaluationLeaf<const NUM_POLY: usize, F: FieldElement, const FIELD_SIZE: usize> {
+pub struct EvaluationLeaf<const NUM_POLY: usize, F: FieldElement, const FIELD_SIZE: usize> {
     leaf_index: usize,
     x: u32,
     x_commitment: BitCommitment<F>,
@@ -32,7 +32,7 @@ struct EvaluationLeaf<const NUM_POLY: usize, F: FieldElement, const FIELD_SIZE: 
 impl<const NUM_POLY: usize, F: FieldElement, const FIELD_SIZE: usize>
     EvaluationLeaf<NUM_POLY, F, FIELD_SIZE>
 {
-    fn new(leaf_index: usize, x: u32, evaluations: Vec<u32>) -> Self {
+    pub fn new(leaf_index: usize, x: u32, evaluations: Vec<u32>) -> Self {
         assert_eq!(evaluations.len(), NUM_POLY);
 
         let x_commitment =
@@ -54,7 +54,7 @@ impl<const NUM_POLY: usize, F: FieldElement, const FIELD_SIZE: usize>
         }
     }
 
-    fn leaf_script(&self) -> Script {
+    pub fn leaf_script(&self) -> Script {
         // equal to x script
         let scripts = script! {
             { self.x_commitment.checksig_verify_script() }
@@ -70,7 +70,7 @@ impl<const NUM_POLY: usize, F: FieldElement, const FIELD_SIZE: usize>
         scripts
     }
 }
-struct BitCommitment<F: FieldElement> {
+pub struct BitCommitment<F: FieldElement> {
     origin_value: u32,
     secret_key: String,
     message: [u8; N0 as usize], // every u8 only available for 4-bits
