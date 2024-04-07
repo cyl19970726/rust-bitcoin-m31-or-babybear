@@ -9,7 +9,7 @@ pub use u31::*;
 mod u31_ext;
 pub use u31_ext::*;
 
-mod fri;
+pub mod fri;
 
 define_pushable!();
 
