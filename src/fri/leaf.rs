@@ -13,7 +13,7 @@ use ::bitcoin_script as script;
 use bitcoin::hashes::{hash160, Hash};
 use bitcoin::ScriptBuf as Script;
 use winterfell::crypto::{ElementHasher, Hasher, RandomCoin};
-use winterfell::math::{FieldElement,fields::f64::BaseElement};
+use winterfell::math::{fields::f64::BaseElement, FieldElement};
 
 // trait Leaf<const NUM_POLY:usize> {
 //     fn eval(&self, x: u32) -> u32;
@@ -32,14 +32,19 @@ struct EvaluationLeaf<const NUM_POLY: usize, F: FieldElement, const FIELD_SIZE: 
 impl<const NUM_POLY: usize, F: FieldElement, const FIELD_SIZE: usize>
     EvaluationLeaf<NUM_POLY, F, FIELD_SIZE>
 {
-    fn new(leaf_index:usize, x: u32,evaluations: Vec<u32>) -> Self{
+    fn new(leaf_index: usize, x: u32, evaluations: Vec<u32>) -> Self {
         assert_eq!(evaluations.len(), NUM_POLY);
 
-        let x_commitment = BitCommitment::new("b138982ce17ac813d505b5b40b665d404e9528e8".to_string(), x);
+        let x_commitment =
+            BitCommitment::new("b138982ce17ac813d505b5b40b665d404e9528e8".to_string(), x);
         let mut evaluations_commitments = Vec::new();
         for i in 0..NUM_POLY {
-            evaluations_commitments.push(BitCommitment::new("b138982ce17ac813d505b5b40b665d404e9528e9".to_string(), evaluations[i]));
+            evaluations_commitments.push(BitCommitment::new(
+                "b138982ce17ac813d505b5b40b665d404e9528e9".to_string(),
+                evaluations[i],
+            ));
         }
+
         Self {
             leaf_index,
             x,
@@ -54,6 +59,7 @@ impl<const NUM_POLY: usize, F: FieldElement, const FIELD_SIZE: usize>
         let scripts = script! {
             { self.x_commitment.checksig_verify_script() }
             { self.x_commitment.check_equal_script() }
+            // todo: calculate to equal to -x
             for i in 0..NUM_POLY{
                 { self.evaluations_commitments[NUM_POLY-1-i].checksig_verify_script() }
                 { self.evaluations_commitments[NUM_POLY-1-i].check_equal_script() }
@@ -95,7 +101,7 @@ impl<F: FieldElement> BitCommitment<F> {
         }
     }
 
-    pub fn check_equal_script(&self) -> Script{
+    pub fn check_equal_script(&self) -> Script {
         script! {
             for i in 0..N0/2{
                 {self.commit_message[ N0 / 2 - 1 - i]} OP_EQUALVERIFY
@@ -115,35 +121,38 @@ impl<F: FieldElement> BitCommitment<F> {
         }
     }
 
-    pub fn signature_script(&self) -> Script{
+    pub fn signature_script(&self) -> Script {
         sign_script(&self.secret_key, self.message)
     }
 
-    pub fn signature(&self) -> Vec<Vec<u8>>{
-        sign(&self.secret_key,self.message)
+    pub fn signature(&self) -> Vec<Vec<u8>> {
+        sign(&self.secret_key, self.message)
     }
 }
 
-
-pub fn u8_to_hex_str(byte: &u8)-> String{
+pub fn u8_to_hex_str(byte: &u8) -> String {
     format!("{:02X}", byte)
 }
 
 #[cfg(test)]
-mod test{
+mod test {
     use crate::execute_script_with_inputs;
 
     use super::*;
 
     #[test]
-    fn test_leaf(){
-        const  num_polys:usize = 2; 
-        let leaf = EvaluationLeaf::<num_polys, BaseElement, 2>::new(0, 0x87654321, vec![0x87654321,0x87654321]);
+    fn test_leaf() {
+        const num_polys: usize = 2;
+        let leaf = EvaluationLeaf::<num_polys, BaseElement, 2>::new(
+            0,
+            0x87654321,
+            vec![0x87654321, 0x87654321],
+        );
         let script = leaf.leaf_script();
-        
+
         let mut sigs: Vec<Vec<u8>> = Vec::new();
         for i in 0..num_polys {
-            let mut signature = leaf.evaluations_commitments[num_polys-1-i].signature();
+            let mut signature = leaf.evaluations_commitments[num_polys - 1 - i].signature();
             signature.iter().for_each(|item| sigs.push(item.to_vec()));
         }
         let mut signature = leaf.x_commitment.signature();
@@ -156,26 +165,27 @@ mod test{
     }
 
     #[test]
-    fn test_bit_commitment(){
-        const  num_polys:usize = 1; 
-        let leaf = EvaluationLeaf::<num_polys, BaseElement, 2>::new(0, 0x87654321, vec![0x87654321]);
+    fn test_bit_commitment() {
+        const num_polys: usize = 1;
+        let leaf =
+            EvaluationLeaf::<num_polys, BaseElement, 2>::new(0, 0x87654321, vec![0x87654321]);
 
-        assert_eq!(leaf.x_commitment.commit_message,[0x87,0x65,0x43,0x21]);
+        assert_eq!(leaf.x_commitment.commit_message, [0x87, 0x65, 0x43, 0x21]);
         println!("{:?}", leaf.x_commitment.commit_message);
 
         let check_equal_script = leaf.x_commitment.check_equal_script();
         println!("{:?}", check_equal_script);
 
-        let expect_script = script!{
+        let expect_script = script! {
             0x21 OP_EQUALVERIFY
             0x43 OP_EQUALVERIFY
             0x65 OP_EQUALVERIFY
             0x87 OP_EQUALVERIFY
         };
 
-        assert_eq!(expect_script,check_equal_script);
+        assert_eq!(expect_script, check_equal_script);
 
-        // check signature and verify the value 
+        // check signature and verify the value
         let mut signature = leaf.x_commitment.signature();
         let exec_scripts = script! {
             { leaf.x_commitment.checksig_verify_script() }

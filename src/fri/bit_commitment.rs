@@ -177,11 +177,11 @@ pub fn sign(secret_key: &str, message_digits: [u8; N0 as usize]) -> Vec<Vec<u8>>
 
     let mut signature: Vec<Vec<u8>> = Vec::new();
     for i in 0..N {
-        let (hash,digit) = digit_signature(secret_key, i, checksum_digits[(N - 1 - i) as usize]);
+        let (hash, digit) = digit_signature(secret_key, i, checksum_digits[(N - 1 - i) as usize]);
         signature.push(hash); // The reason why reverse order is used here is because it needs to be pushed onto the stack
         signature.push(vec![digit]);
     }
-    assert!(signature.len() == 2*N as usize);
+    assert!(signature.len() == 2 * N as usize);
     signature
 }
 
@@ -304,7 +304,7 @@ mod test {
 
         // the origin value is [1000,0111,0110,0101,0100,0011,0010,0001]
         // for the u8 resprentation [0x87,0x65,0x43,0x21]
-        let origin_value:u32 = 0x87654321;
+        let origin_value: u32 = 0x87654321;
         let message = to_digits::<N0>(origin_value);
         const MESSAGE: [u8; N0 as usize] = [1, 2, 3, 4, 5, 6, 7, 8];
         assert_eq!(message, MESSAGE);
@@ -338,7 +338,6 @@ mod test {
         assert!(exec_result.success);
     }
 
-
     #[test]
     fn test_winternitz_with_input() {
         // The message to sign
@@ -356,7 +355,7 @@ mod test {
             pubkey.push(public_key(MY_SECKEY, i as u32));
         }
 
-        println!("{:?}",sign_script(MY_SECKEY, MESSAGE).to_string());
+        println!("{:?}", sign_script(MY_SECKEY, MESSAGE).to_string());
         let script = script! {
             { checksig_verify(pubkey.as_slice()) }// using secret key to generate pubkey
 
@@ -379,7 +378,7 @@ mod test {
         );
 
         let sig = sign(MY_SECKEY, MESSAGE);
-        let exec_result = execute_script_with_inputs(script,sig);
+        let exec_result = execute_script_with_inputs(script, sig);
         assert!(exec_result.success);
     }
 }
