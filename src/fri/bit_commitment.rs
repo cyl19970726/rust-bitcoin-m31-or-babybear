@@ -322,12 +322,6 @@ mod test {
             0x43 OP_EQUALVERIFY
             0x65 OP_EQUALVERIFY
             0x87 OP_EQUAL
-            // 0xA9 OP_EQUALVERIFY
-            // 0xCB OP_EQUALVERIFY
-            // 0xED OP_EQUALVERIFY
-            // 0x0F OP_EQUALVERIFY
-            // 0x00 OP_EQUALVERIFY
-            // 0x00 OP_EQUAL
         };
 
         println!(
@@ -340,13 +334,6 @@ mod test {
 
     #[test]
     fn test_winternitz_with_input() {
-        // The message to sign
-        // const MESSAGE: [u8; 20] = [
-        //     1, 2, 3, 4, 5, 6, 7, 8, 9, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF, 0, 0, 0, 0, 0,
-        // ];
-
-        // let MESSAGE = to_digits::<8>(99992921);
-        // print!("{:?}", MESSAGE);
 
         const MESSAGE: [u8; N0 as usize] = [1, 2, 3, 4, 5, 6, 7, 8];
 
@@ -363,12 +350,6 @@ mod test {
             0x43 OP_EQUALVERIFY
             0x65 OP_EQUALVERIFY
             0x87 OP_EQUALVERIFY
-            // 0xA9 OP_EQUALVERIFY
-            // 0xCB OP_EQUALVERIFY
-            // 0xED OP_EQUALVERIFY
-            // 0x0F OP_EQUALVERIFY
-            // 0x00 OP_EQUALVERIFY
-            // 0x00 OP_EQUAL
             OP_1
         };
 
@@ -378,6 +359,36 @@ mod test {
         );
 
         let sig = sign(MY_SECKEY, MESSAGE);
+        let exec_result = execute_script_with_inputs(script, sig);
+        assert!(exec_result.success);
+
+        // Message Checking
+        const MESSAGE_1: [u8; N0 as usize] = [0xA, 0xB, 0xC, 0xD, 0xE, 0xF, 7, 8];
+
+        let mut pubkey = Vec::new();
+        for i in 0..N {
+            pubkey.push(public_key(MY_SECKEY, i as u32));
+        }
+
+        println!("{:?}", sign_script(MY_SECKEY, MESSAGE_1).to_string());
+        let script = script! {
+            { checksig_verify(pubkey.as_slice()) }// using secret key to generate pubkey
+
+            0xBA OP_EQUALVERIFY
+            0xDC OP_EQUALVERIFY
+            0xFE OP_EQUALVERIFY
+            0x87 OP_EQUALVERIFY
+            OP_1
+        };
+
+        println!(
+            "Winternitz signature size: {:?} bytes per 80 bits",
+            script.as_bytes().len()
+        );
+
+        println!("{:?}",script);
+
+        let sig = sign(MY_SECKEY, MESSAGE_1);
         let exec_result = execute_script_with_inputs(script, sig);
         assert!(exec_result.success);
     }
