@@ -193,13 +193,27 @@ pub fn sign_script(secret_key: &str, message_digits: [u8; N0 as usize]) -> Scrip
 
     script! {
         for i in 0..N {
-            { digit_signature_script(secret_key, i, checksum_digits[ (N-1-i) as usize]) } // The reason why reverse order is used here is because it needs to be pushed onto the stack
+            // the checksum must be N-1-i(can not set i reason) because we must ensure that the checkum only can modify to a smallet number when the digit only can modify to a bigger number by a malious part.
+            { digit_signature_script(secret_key, i, checksum_digits[ (N-1-i) as usize]) } 
         }
     }
 }
 
 ///  Locking Script for a Winternitz signature
 pub fn checksig_verify(pub_key: &[Vec<u8>]) -> Script {
+    // If the mssage splits as  [A,B,C,D] [checkum_digit1,checksum_digit2]
+    // The following input signature looks like:
+    // {A_sig Hash}, {A digit}, {A_sig Hash}, {B digit}, {B_sig Hash}, {C digit}, {C_sig Hash}, {D digit}, {D_sig Hash},
+    // ===  STACK  ==== 
+    // |  A_digit   |
+    // | A_sig HASH |        
+    // |  B_digit   |
+    // | B_sig HASH |
+    // |     ...    | ..N
+    // |  checkum_digit1|
+    // |  C1_HASH   | 
+    // |  checkum_digit2|
+    // |  C2_HASH   | ..N1
     script! {
         //
         // Verify the hash chain for each digit
@@ -208,11 +222,9 @@ pub fn checksig_verify(pub_key: &[Vec<u8>]) -> Script {
         // Repeat this for every of the n many digits
         for digit_index in 0..N {
             // Verify that the digit is in the range [0, d]
-            OP_DUP
-            0
-            { D + 1 }
-            OP_WITHIN
-            OP_VERIFY
+            // See https://github.com/BitVM/BitVM/issues/35
+            { D }
+            OP_MIN
 
             // Push two copies of the digit onto the altstack
             OP_DUP
@@ -334,7 +346,8 @@ mod test {
 
     #[test]
     fn test_winternitz_with_input() {
-
+        
+        // Test 1...8 CASE 
         const MESSAGE: [u8; N0 as usize] = [1, 2, 3, 4, 5, 6, 7, 8];
 
         let mut pubkey = Vec::new();
@@ -362,8 +375,8 @@ mod test {
         let exec_result = execute_script_with_inputs(script, sig);
         assert!(exec_result.success);
 
-        // Message Checking
-        const MESSAGE_1: [u8; N0 as usize] = [0xA, 0xB, 0xC, 0xD, 0xE, 0xF, 7, 8];
+        // Test 0xA 0xB 0xC 0xD 0xE 0xF Case
+        const MESSAGE_1: [u8; N0 as usize] = [0xA, 0xB, 0xC, 0xD, 0x0, 0x0, 7, 8];
 
         let mut pubkey = Vec::new();
         for i in 0..N {
@@ -371,6 +384,35 @@ mod test {
         }
 
         println!("{:?}", sign_script(MY_SECKEY, MESSAGE_1).to_string());
+        let script = script! {
+            { checksig_verify(pubkey.as_slice()) }// using secret key to generate pubkey
+
+            0xBA OP_EQUALVERIFY
+            0xDC OP_EQUALVERIFY
+            0x00 OP_EQUALVERIFY
+            0x87 OP_EQUALVERIFY
+            OP_1
+        };
+
+        println!(
+            "Winternitz signature size: {:?} bytes per 80 bits",
+            script.as_bytes().len()
+        );
+
+
+        // test zero case
+        let sig = sign(MY_SECKEY, MESSAGE_1);
+        let exec_result = execute_script_with_inputs(script, sig);
+        assert!(exec_result.success);
+
+        const MESSAGE_2: [u8; N0 as usize] = [0xA, 0xB, 0xC, 0xD, 0xE, 0xF, 7, 8];
+
+        let mut pubkey = Vec::new();
+        for i in 0..N {
+            pubkey.push(public_key(MY_SECKEY, i as u32));
+        }
+
+        println!("{:?}", sign_script(MY_SECKEY, MESSAGE_2).to_string());
         let script = script! {
             { checksig_verify(pubkey.as_slice()) }// using secret key to generate pubkey
 
@@ -388,7 +430,7 @@ mod test {
 
         println!("{:?}",script);
 
-        let sig = sign(MY_SECKEY, MESSAGE_1);
+        let sig = sign(MY_SECKEY, MESSAGE_2);
         let exec_result = execute_script_with_inputs(script, sig);
         assert!(exec_result.success);
     }
