@@ -9,34 +9,32 @@ use std::marker::PhantomData;
 use std::usize;
 
 use super::bit_commitment::*;
-use ::bitcoin_script as script;
 use bitcoin::hashes::{hash160, Hash};
+use bitcoin::opcodes::{OP_EQUAL, OP_EQUALVERIFY, OP_SWAP};
 use bitcoin::ScriptBuf as Script;
-use winterfell::crypto::{ElementHasher, Hasher, RandomCoin};
-use winterfell::math::{fields::f64::BaseElement, FieldElement};
+use bitcoin_script::{define_pushable, script};
+define_pushable!();
 
-// trait Leaf<const NUM_POLY:usize> {
-//     fn eval(&self, x: u32) -> u32;
-//     fn serialize(&self) -> Vec<u8>;
-//     fn hash(&self) -> Vec<u8>;
-// }
-
-pub struct EvaluationLeaf<const NUM_POLY: usize, F: FieldElement, const FIELD_SIZE: usize> {
+use super::NativeField;
+pub struct EvaluationLeaf<const NUM_POLY: usize, F: NativeField> {
     leaf_index: usize,
-    x: u32,
+    x: F,
     x_commitment: BitCommitment<F>,
-    evaluations: Vec<u32>,
+    neg_x_commitment: BitCommitment<F>,
+    evaluations: Vec<F>,
     evaluations_commitments: Vec<BitCommitment<F>>,
 }
 
-impl<const NUM_POLY: usize, F: FieldElement, const FIELD_SIZE: usize>
-    EvaluationLeaf<NUM_POLY, F, FIELD_SIZE>
-{
-    pub fn new(leaf_index: usize, x: u32, evaluations: Vec<u32>) -> Self {
+impl<const NUM_POLY: usize, F: NativeField> EvaluationLeaf<NUM_POLY, F> {
+    pub fn new(leaf_index: usize, x: F, evaluations: Vec<F>) -> Self {
         assert_eq!(evaluations.len(), NUM_POLY);
 
         let x_commitment =
             BitCommitment::new("b138982ce17ac813d505b5b40b665d404e9528e8".to_string(), x);
+        let neg_x_commitment = BitCommitment::new(
+            "b138982ce17ac813d505b5b40b665d404e9528e8".to_string(),
+            F::field_mod() - x,
+        );
         let mut evaluations_commitments = Vec::new();
         for i in 0..NUM_POLY {
             evaluations_commitments.push(BitCommitment::new(
@@ -49,6 +47,7 @@ impl<const NUM_POLY: usize, F: FieldElement, const FIELD_SIZE: usize>
             leaf_index,
             x,
             x_commitment,
+            neg_x_commitment,
             evaluations,
             evaluations_commitments,
         }
@@ -70,7 +69,8 @@ impl<const NUM_POLY: usize, F: FieldElement, const FIELD_SIZE: usize>
         scripts
     }
 }
-pub struct BitCommitment<F: FieldElement> {
+
+pub struct BitCommitment<F: NativeField> {
     origin_value: u32,
     secret_key: String,
     message: [u8; N0 as usize], // every u8 only available for 4-bits
@@ -79,8 +79,9 @@ pub struct BitCommitment<F: FieldElement> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldElement> BitCommitment<F> {
-    pub fn new(secret_key: String, origin_value: u32) -> Self {
+impl<F: NativeField> BitCommitment<F> {
+    pub fn new(secret_key: String, origin_value: F) -> Self {
+        let origin_value = origin_value.as_u32();
         let message = to_digits::<N0>(origin_value);
         let mut commit_message = [0; N0 / 2];
         for i in 0..N0 / 2 {
@@ -109,6 +110,17 @@ impl<F: FieldElement> BitCommitment<F> {
         }
     }
 
+    pub fn check_equal_x_or_neg_x_script(&self, neg_x: &BitCommitment<F>) -> Script {
+        script! {
+            for i in 0..N0/2{
+                OP_DUP
+                {self.commit_message[ N0 / 2 - 1 - i]} OP_EQUAL OP_SWAP
+                {neg_x.commit_message[ N0 / 2 - 1 - i]} OP_EQUAL OP_ADD
+                OP_1 OP_EQUALVERIFY
+            }
+        }
+    }
+
     pub fn checksig_verify_script(&self) -> Script {
         checksig_verify(self.pubkey.as_slice())
     }
@@ -126,7 +138,13 @@ impl<F: FieldElement> BitCommitment<F> {
     }
 
     pub fn signature(&self) -> Vec<Vec<u8>> {
-        sign(&self.secret_key, self.message)
+        let mut sig = sign(&self.secret_key, self.message);
+        for i in 0..sig.len() {
+            if sig[i].len() == 1 && sig[i][0] == 0 {
+                sig[i] = vec![]
+            }
+        }
+        sig
     }
 }
 
@@ -136,26 +154,35 @@ pub fn u8_to_hex_str(byte: &u8) -> String {
 
 #[cfg(test)]
 mod test {
+    use p3_baby_bear::BabyBear;
+    use rand::Rng;
+
     use crate::execute_script_with_inputs;
 
     use super::*;
 
     #[test]
-    fn test_leaf() {
+    fn test_leaf_execution() {
         const num_polys: usize = 2;
-        let leaf = EvaluationLeaf::<num_polys, BaseElement, 2>::new(
+        let x = BabyBear::from_u32(0x11654321);
+
+        let leaf = EvaluationLeaf::<num_polys, BabyBear>::new(
             0,
-            0x87654321,
-            vec![0x87654321, 0x87654321],
+            x,
+            vec![
+                BabyBear::from_u32(0x11654321),
+                BabyBear::from_u32(0x11654321),
+            ],
         );
+
         let script = leaf.leaf_script();
 
         let mut sigs: Vec<Vec<u8>> = Vec::new();
         for i in 0..num_polys {
-            let mut signature = leaf.evaluations_commitments[num_polys - 1 - i].signature();
+            let signature = leaf.evaluations_commitments[num_polys - 1 - i].signature();
             signature.iter().for_each(|item| sigs.push(item.to_vec()));
         }
-        let mut signature = leaf.x_commitment.signature();
+        let signature = leaf.x_commitment.signature();
         signature.iter().for_each(|item| sigs.push(item.to_vec()));
 
         println!("{:?}", script);
@@ -165,35 +192,170 @@ mod test {
     }
 
     #[test]
-    fn test_bit_commitment() {
-        const num_polys: usize = 1;
-        let leaf =
-            EvaluationLeaf::<num_polys, BaseElement, 2>::new(0, 0x87654321, vec![0x87654321]);
+    fn test_bit_commitment_scripts() {
+        let x_commitment = BitCommitment::new("0000".to_string(), BabyBear::from_u32(0x11654321));
+        assert_eq!(x_commitment.commit_message, [0x11, 0x65, 0x43, 0x21]);
+        // println!("{:?}",x_commitment.commit_message);
 
-        assert_eq!(leaf.x_commitment.commit_message, [0x87, 0x65, 0x43, 0x21]);
-        println!("{:?}", leaf.x_commitment.commit_message);
-
-        let check_equal_script = leaf.x_commitment.check_equal_script();
-        println!("{:?}", check_equal_script);
+        let check_equal_script = x_commitment.check_equal_script();
+        // println!("{:?}", check_equal_script);
 
         let expect_script = script! {
             0x21 OP_EQUALVERIFY
             0x43 OP_EQUALVERIFY
             0x65 OP_EQUALVERIFY
-            0x87 OP_EQUALVERIFY
+            0x11 OP_EQUALVERIFY
         };
-
+        // println!("{:}",expect_script);
         assert_eq!(expect_script, check_equal_script);
 
         // check signature and verify the value
-        let mut signature = leaf.x_commitment.signature();
+        let signature = x_commitment.signature();
         let exec_scripts = script! {
-            { leaf.x_commitment.checksig_verify_script() }
-            { leaf.x_commitment.check_equal_script() }
+            { x_commitment.checksig_verify_script() }
+            { x_commitment.check_equal_script() }
             OP_1
         };
-        println!("{:?}", exec_scripts);
+        // println!("{:?}", exec_scripts);
         let exec_result = execute_script_with_inputs(exec_scripts, signature);
         assert!(exec_result.success);
+
+        for _ in 0..30 {
+            let mut rng = rand::thread_rng();
+            let random_number: u32 = rng.gen();
+            let n = random_number % BabyBear::MOD;
+
+            let x_commitment = BitCommitment::new(
+                "b138982ce17ac813d505b5b40b665d404e9528e8".to_string(),
+                BabyBear::from_u32(n),
+            );
+            println!("{:?}", x_commitment.commit_message);
+
+            let check_equal_script = x_commitment.check_equal_script();
+            println!("{:?}", check_equal_script);
+
+            // check signature and verify the value
+            let signature = x_commitment.signature();
+            let exec_scripts = script! {
+                { x_commitment.checksig_verify_script() }
+                { x_commitment.check_equal_script() }
+                OP_1
+            };
+            let exec_result = execute_script_with_inputs(exec_scripts, signature);
+            assert!(exec_result.success);
+        }
+
+        // test bitcommitment
+    }
+
+    #[test]
+    fn test_check_x_neg_x_equal_script() {
+        const num_polys: usize = 1;
+        let x = BabyBear::from_u32(0x11654321);
+        let neg_x = BabyBear::field_mod() - x; // 669ABCE0
+        let expect_neg_x = BabyBear::from_u32(0x669ABCE0);
+        assert_eq!(neg_x, expect_neg_x);
+        let leaf =
+            EvaluationLeaf::<num_polys, BabyBear>::new(0, x, vec![BabyBear::from_u32(0x11654321)]);
+
+        assert_eq!(x.as_u32(), leaf.x_commitment.origin_value);
+        assert_eq!(neg_x.as_u32(), leaf.neg_x_commitment.origin_value);
+        println!("{}", format!("{:X}", neg_x.as_u32()));
+
+        // check signature and verify the value
+        let signature = leaf.x_commitment.signature();
+        // check equal to r
+        let exec_scripts = script! {
+            { leaf.x_commitment.checksig_verify_script() }
+            { leaf.x_commitment.check_equal_x_or_neg_x_script(&leaf.neg_x_commitment) }
+            OP_1
+        };
+        let exec_result = execute_script_with_inputs(exec_scripts, signature);
+        assert!(exec_result.success);
+
+        // check equal to -r
+        let signature = leaf.x_commitment.signature();
+        let exec_scripts = script! {
+            { leaf.x_commitment.checksig_verify_script() }
+            { leaf.neg_x_commitment.check_equal_x_or_neg_x_script(&leaf.x_commitment) }
+            OP_1
+        };
+        let exec_result = execute_script_with_inputs(exec_scripts, signature);
+        assert!(exec_result.success);
+
+        for _ in 0..30 {
+            let mut rng = rand::thread_rng();
+            let random_number: u32 = rng.gen();
+            let x = random_number % BabyBear::MOD;
+            let x = BabyBear::from_u32(x);
+            let neg_x = BabyBear::field_mod() - x;
+            let leaf = EvaluationLeaf::<num_polys, BabyBear>::new(
+                0,
+                x,
+                vec![BabyBear::from_u32(0x11654321)],
+            );
+
+            assert_eq!(x.as_u32(), leaf.x_commitment.origin_value);
+            assert_eq!(neg_x.as_u32(), leaf.neg_x_commitment.origin_value);
+            // check signature and verify the value
+            let signature = leaf.x_commitment.signature();
+            // check equal to r
+            let exec_scripts = script! {
+                { leaf.x_commitment.checksig_verify_script() }
+                { leaf.x_commitment.check_equal_x_or_neg_x_script(&leaf.neg_x_commitment) }
+                OP_1
+            };
+            let exec_result = execute_script_with_inputs(exec_scripts, signature);
+            assert!(exec_result.success);
+
+            // check equal to -r
+            let signature = leaf.x_commitment.signature();
+            let exec_scripts = script! {
+                { leaf.x_commitment.checksig_verify_script() }
+                { leaf.neg_x_commitment.check_equal_x_or_neg_x_script(&leaf.x_commitment) }
+                OP_1
+            };
+            let exec_result = execute_script_with_inputs(exec_scripts, signature);
+            assert!(exec_result.success);
+
+            let signature = leaf.neg_x_commitment.signature();
+            let exec_scripts = script! {
+                { leaf.neg_x_commitment.checksig_verify_script() }
+                { leaf.x_commitment.check_equal_x_or_neg_x_script(&leaf.neg_x_commitment) }
+                OP_1
+            };
+            let exec_result = execute_script_with_inputs(exec_scripts, signature);
+            assert!(exec_result.success);
+        }
+    }
+
+    #[test]
+    fn test_push_bytes() {
+        let scripts1 = script! {
+            0x00bc
+            OP_DROP
+            OP_1
+        };
+
+        let scripts2 = script! {
+            0x50
+            OP_DROP
+            OP_1
+        };
+
+        let scripts3 = script! {
+            <0x90>
+            OP_DROP
+            OP_1
+        };
+
+        // let script4 = Script::parse_asm("OP_PUSHDATA1 90 OP_DROP OP_PUSHNUM_1");
+        let scripts4 = Script::parse_asm("OP_PUSHBYTES_1 90 OP_DROP OP_PUSHNUM_1").unwrap();
+        println!("{:?}", scripts1);
+        println!("{:?}", scripts2);
+        println!("{:?}", scripts3);
+        println!("{:?}", scripts4);
+        let result = execute_script(scripts4);
+        assert!(result.success);
     }
 }
