@@ -82,21 +82,7 @@ pub fn public_key(secret_key: &str, digit_index: u32) -> Vec<u8> {
 
 /// Generate the public key for the i-th digit of the message
 pub fn public_key_script(secret_key: &str, digit_index: u32) -> Script {
-    // Convert secret_key from hex string to bytes
-    let mut secret_i = match hex_decode(secret_key) {
-        Ok(bytes) => bytes,
-        Err(_) => panic!("Invalid hex string"),
-    };
-
-    secret_i.push(digit_index as u8);
-
-    let mut hash = hash160::Hash::hash(&secret_i);
-
-    for _ in 0..D {
-        hash = hash160::Hash::hash(&hash[..]);
-    }
-
-    let hash_bytes = hash.as_byte_array().to_vec();
+    let hash_bytes = public_key(secret_key, digit_index);
 
     script! {
         { hash_bytes }
@@ -127,20 +113,7 @@ pub fn digit_signature(secret_key: &str, digit_index: u32, message_digit: u8) ->
 /// Compute the signature for the i-th digit of the message
 pub fn digit_signature_script(secret_key: &str, digit_index: u32, message_digit: u8) -> Script {
     // Convert secret_key from hex string to bytes
-    let mut secret_i = match hex_decode(secret_key) {
-        Ok(bytes) => bytes,
-        Err(_) => panic!("Invalid hex string"),
-    };
-
-    secret_i.push(digit_index as u8);
-
-    let mut hash = hash160::Hash::hash(&secret_i);
-
-    for _ in 0..message_digit {
-        hash = hash160::Hash::hash(&hash[..]);
-    }
-
-    let hash_bytes = hash.as_byte_array().to_vec();
+    let (hash_bytes, message_digit) = digit_signature(secret_key, digit_index, message_digit);
 
     script! {
         { hash_bytes }
@@ -171,7 +144,8 @@ pub fn to_digits<const DIGIT_COUNT: usize>(mut number: u32) -> [u8; DIGIT_COUNT]
 
 /// Compute the signature for a given message
 pub fn sign(secret_key: &str, message_digits: [u8; N0 as usize]) -> Vec<Vec<u8>> {
-    // const message_digits = to_digits(message, n0)
+    // if the message is [1, 2, 3, 4, 5, 6, 7, 8]; checksum=36 120-36=84(0101,0100)[5,4]
+    // but the checksum_digits here has been reverse into [4,5]
     let mut checksum_digits = to_digits::<N1>(checksum(message_digits)).to_vec();
     checksum_digits.append(&mut message_digits.to_vec());
 
@@ -192,11 +166,23 @@ pub fn sign_script(secret_key: &str, message_digits: [u8; N0 as usize]) -> Scrip
     checksum_digits.append(&mut message_digits.to_vec());
 
     script! {
+
         for i in 0..N {
             // the checksum must be N-1-i(can not set i reason) because we must ensure that the checkum only can modify to a smallet number when the digit only can modify to a bigger number by a malious part.
-            { digit_signature_script(secret_key, i, checksum_digits[ (N-1-i) as usize]) } 
+            { digit_signature_script(secret_key, i, checksum_digits[ (N-1-i) as usize]) }
         }
     }
+    // if the message is [1, 2, 3, 4, 5, 6, 7, 8]; checksum=84(0101,0100) [5,4]
+    // the script looks like:
+    // OP_PUSHBYTES_20 HASH_8 OP_PUSHNUM_8 OP_PUSHBYTES_20 HASH_7 OP_PUSHNUM_7 ... OP_PUSHBYTES_20 HASH_1 OP_PUSHNUM_1 || OP_PUSHBYTES_20 HASH_4 OP_PUSHNUM_4 OP_PUSHBYTES_20 HASH_2 OP_PUSHNUM_2
+    // let sig = sign(secret_key,message_digits);
+    // script!{
+    //     for i in 0..N {
+
+    //         {sig.clone()}
+
+    //     }
+    // }
 }
 
 ///  Locking Script for a Winternitz signature
@@ -204,14 +190,14 @@ pub fn checksig_verify(pub_key: &[Vec<u8>]) -> Script {
     // If the mssage splits as  [A,B,C,D] [checkum_digit1,checksum_digit2]
     // The following input signature looks like:
     // {A_sig Hash}, {A digit}, {A_sig Hash}, {B digit}, {B_sig Hash}, {C digit}, {C_sig Hash}, {D digit}, {D_sig Hash},
-    // ===  STACK  ==== 
+    // ===  STACK  ====
     // |  A_digit   |
-    // | A_sig HASH |        
+    // | A_sig HASH |
     // |  B_digit   |
     // | B_sig HASH |
     // |     ...    | ..N
     // |  checkum_digit1|
-    // |  C1_HASH   | 
+    // |  C1_HASH   |
     // |  checkum_digit2|
     // |  C2_HASH   | ..N1
     script! {
@@ -224,7 +210,7 @@ pub fn checksig_verify(pub_key: &[Vec<u8>]) -> Script {
             // Verify that the digit is in the range [0, d]
             // See https://github.com/BitVM/BitVM/issues/35
             { D }
-            OP_MIN
+            OP_MIN // Return the smaller number
 
             // Push two copies of the digit onto the altstack
             OP_DUP
@@ -254,13 +240,12 @@ pub fn checksig_verify(pub_key: &[Vec<u8>]) -> Script {
         //
 
         // 1. Compute the checksum of the message's digits
-        0
-        for _ in 0..N0 {
-            OP_FROMALTSTACK OP_DUP OP_ROT OP_ADD
+        OP_FROMALTSTACK OP_DUP OP_NEGATE
+        for _ in 1..N0 {
+            OP_FROMALTSTACK OP_TUCK OP_SUB
         }
         { D * N0 as u32 }
-        OP_SWAP
-        OP_SUB
+        OP_ADD
 
 
         // 2. Sum up the signed checksum's digits
@@ -276,17 +261,21 @@ pub fn checksig_verify(pub_key: &[Vec<u8>]) -> Script {
         // 3. Ensure both checksums are equal
         OP_EQUALVERIFY
 
-        // Because the 2LOG_D equal to 1 byte
+
         // Convert the message's digits to bytes
-        for _ in 0..N0 / 2 {
+        for i in 0..N0 / 2 {
             OP_SWAP
             for _ in 0..LOG_D {
                 OP_DUP OP_ADD
             }
             OP_ADD
-            OP_TOALTSTACK
+            // Push all bytes to the altstack, except for the last byte
+            if i != (N0/2) - 1 {
+                OP_TOALTSTACK
+            }
         }
-        for _ in 0..N0 / 2 {
+        // Read the bytes from the altstack
+        for _ in 0..N0 / 2 - 1{
             OP_FROMALTSTACK
         }
 
@@ -295,7 +284,7 @@ pub fn checksig_verify(pub_key: &[Vec<u8>]) -> Script {
 
 #[cfg(test)]
 mod test {
-    use bitcoin::ecdsa::Signature;
+    use bitcoin::{amount::CheckedSum, ecdsa::Signature, opcodes::OP_EQUAL};
 
     use crate::execute_script_with_inputs;
 
@@ -305,15 +294,17 @@ mod test {
     const MY_SECKEY: &str = "b138982ce17ac813d505b5b40b665d404e9528e7"; // 20 byte
 
     #[test]
+    fn test_checksum() {
+        let message_digits: [u8; N0 as usize] = [1, 2, 3, 4, 5, 6, 7, 8];
+        // if the message is [1, 2, 3, 4, 5, 6, 7, 8]; checksum=36 120-36=84(0101,0100)[5,4]
+        let sum = checksum(message_digits);
+        assert_eq!(sum, 84);
+        let checksum_digits = to_digits::<N1>(checksum(message_digits)).to_vec();
+        assert_eq!(checksum_digits, vec![4, 5]);
+    }
+
+    #[test]
     fn test_winternitz() {
-        // The message to sign
-        // const MESSAGE: [u8; 20] = [
-        //     1, 2, 3, 4, 5, 6, 7, 8, 9, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF, 0, 0, 0, 0, 0,
-        // ];
-
-        // let MESSAGE = to_digits::<8>(99992921);
-        // print!("{:?}", MESSAGE);
-
         // the origin value is [1000,0111,0110,0101,0100,0011,0010,0001]
         // for the u8 resprentation [0x87,0x65,0x43,0x21]
         let origin_value: u32 = 0x87654321;
@@ -342,12 +333,40 @@ mod test {
         );
         let exec_result = execute_script(script);
         assert!(exec_result.success);
+
+        // test zero case
+        let origin_value: u32 = 0xED65002F;
+        let message = to_digits::<N0>(origin_value);
+        const MESSAGE_1: [u8; N0 as usize] = [0xF, 2, 0, 0, 5, 6, 0xD, 0xE];
+        assert_eq!(message, MESSAGE_1);
+
+        let mut pubkey = Vec::new();
+        for i in 0..N {
+            pubkey.push(public_key(MY_SECKEY, i as u32));
+        }
+
+        let script = script! {
+            { sign_script(MY_SECKEY, MESSAGE_1) } // digit 0 = [checkum hash_i]
+            { checksig_verify(pubkey.as_slice()) }// using secret key to generate pubkey
+
+            0x2F OP_EQUALVERIFY
+            0x00 OP_EQUALVERIFY
+            0x65 OP_EQUALVERIFY
+            0xED OP_EQUALVERIFY
+            OP_1
+        };
+
+        println!(
+            "Winternitz signature size: {:?} bytes per 80 bits",
+            script.as_bytes().len()
+        );
+        let exec_result = execute_script(script);
+        assert!(exec_result.success);
     }
 
     #[test]
     fn test_winternitz_with_input() {
-        
-        // Test 1...8 CASE 
+        // ======== Test 1...F CASE ============
         const MESSAGE: [u8; N0 as usize] = [1, 2, 3, 4, 5, 6, 7, 8];
 
         let mut pubkey = Vec::new();
@@ -355,7 +374,6 @@ mod test {
             pubkey.push(public_key(MY_SECKEY, i as u32));
         }
 
-        println!("{:?}", sign_script(MY_SECKEY, MESSAGE).to_string());
         let script = script! {
             { checksig_verify(pubkey.as_slice()) }// using secret key to generate pubkey
 
@@ -371,54 +389,56 @@ mod test {
             script.as_bytes().len()
         );
 
-        let sig = sign(MY_SECKEY, MESSAGE);
-        let exec_result = execute_script_with_inputs(script, sig);
+        let sig0 = sign(MY_SECKEY, MESSAGE);
+        let exec_result = execute_script_with_inputs(script, sig0.clone());
         assert!(exec_result.success);
 
         // Test 0xA 0xB 0xC 0xD 0xE 0xF Case
-        const MESSAGE_1: [u8; N0 as usize] = [0xA, 0xB, 0xC, 0xD, 0x0, 0x0, 7, 8];
+        const MESSAGE_1: [u8; N0 as usize] = [0xA, 0xB, 0xC, 0xD, 0xE, 0xF, 9, 8];
 
         let mut pubkey = Vec::new();
         for i in 0..N {
             pubkey.push(public_key(MY_SECKEY, i as u32));
         }
 
-        println!("{:?}", sign_script(MY_SECKEY, MESSAGE_1).to_string());
-        let script = script! {
-            { checksig_verify(pubkey.as_slice()) }// using secret key to generate pubkey
-
-            0xBA OP_EQUALVERIFY
-            0xDC OP_EQUALVERIFY
-            0x00 OP_EQUALVERIFY
-            0x87 OP_EQUALVERIFY
-            OP_1
-        };
-
-        println!(
-            "Winternitz signature size: {:?} bytes per 80 bits",
-            script.as_bytes().len()
-        );
-
-
-        // test zero case
-        let sig = sign(MY_SECKEY, MESSAGE_1);
-        let exec_result = execute_script_with_inputs(script, sig);
-        assert!(exec_result.success);
-
-        const MESSAGE_2: [u8; N0 as usize] = [0xA, 0xB, 0xC, 0xD, 0xE, 0xF, 7, 8];
-
-        let mut pubkey = Vec::new();
-        for i in 0..N {
-            pubkey.push(public_key(MY_SECKEY, i as u32));
-        }
-
-        println!("{:?}", sign_script(MY_SECKEY, MESSAGE_2).to_string());
         let script = script! {
             { checksig_verify(pubkey.as_slice()) }// using secret key to generate pubkey
 
             0xBA OP_EQUALVERIFY
             0xDC OP_EQUALVERIFY
             0xFE OP_EQUALVERIFY
+            0x89 OP_EQUALVERIFY
+            OP_1
+        };
+
+        println!(
+            "Winternitz signature size: {:?} bytes per 80 bits",
+            script.as_bytes().len()
+        );
+
+        let mut sig1 = sign(MY_SECKEY, MESSAGE_1);
+        for i in 0..sig1.len() {
+            if sig1[i].len() == 1 && sig1[i][0] == 0 {
+                sig1[i] = vec![]
+            }
+        }
+        let exec_result = execute_script_with_inputs(script, sig1);
+        assert!(exec_result.success);
+
+        // ============ Test 0 CASE ==============
+        const MESSAGE_2: [u8; N0 as usize] = [0xA, 0xB, 0x0, 0x0, 0x0, 0xF, 7, 8];
+
+        let mut pubkey = Vec::new();
+        for i in 0..N {
+            pubkey.push(public_key(MY_SECKEY, i as u32));
+        }
+
+        let script = script! {
+            { checksig_verify(pubkey.as_slice()) }// using secret key to generate pubkey
+
+            0xBA OP_EQUALVERIFY
+            0x00 OP_EQUALVERIFY
+            0xF0 OP_EQUALVERIFY
             0x87 OP_EQUALVERIFY
             OP_1
         };
@@ -428,10 +448,36 @@ mod test {
             script.as_bytes().len()
         );
 
-        println!("{:?}",script);
-
-        let sig = sign(MY_SECKEY, MESSAGE_2);
+        let mut sig = sign(MY_SECKEY, MESSAGE_2);
+        for i in 0..sig.len() {
+            if sig[i].len() == 1 && sig[i][0] == 0 {
+                sig[i] = vec![]
+            }
+        }
         let exec_result = execute_script_with_inputs(script, sig);
+        assert!(exec_result.success);
+    }
+
+    #[test]
+    fn test_zero_input() {
+        let script = script! {
+
+            0xA OP_EQUALVERIFY
+            OP_1
+        };
+
+        let input = vec![vec![0xA]];
+        let exec_result = execute_script_with_inputs(script, input);
+        assert!(exec_result.success);
+
+        let script = script! {
+
+            0x0 OP_EQUALVERIFY
+            OP_1
+        };
+
+        let input = vec![vec![]];
+        let exec_result = execute_script_with_inputs(script, input);
         assert!(exec_result.success);
     }
 }
