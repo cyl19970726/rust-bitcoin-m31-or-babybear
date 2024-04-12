@@ -1,5 +1,8 @@
+use std::usize;
+
 use crate::fri::NativeField;
 use crate::{pushable, unroll};
+use bitcoin::opcodes::{OP_ADD, OP_LSHIFT, OP_SWAP};
 use bitcoin::{
     opcodes::{OP_FROMALTSTACK, OP_TOALTSTACK},
     ScriptBuf as Script,
@@ -10,6 +13,9 @@ pub use m31::*;
 
 mod babybear;
 pub use babybear::*;
+
+
+use crate::fri::bit_commitment::{D,LOG_D,LOG_D_usize,N0,N1,N};
 
 pub trait U31Config {
     const MOD: u32;
@@ -101,6 +107,56 @@ pub fn u31_mul<M: U31Config>() -> Script {
     }
 }
 
+pub fn convert_digits_to_u31<M:U31Config,const DIGITS_BITSIZE:usize,const DIGITS_NUM:usize>() -> Script{
+    //0x87654321; 
+    // The stack before convert_D_to_u31 looks like(DIGITS_BITSIZE=8,DIGITS_NUM=4 ): 
+    // 0x21 
+    // 0x43 
+    // 0x65 
+    // 0x87 
+    script!{
+        // The Top Element of the stack is the lowest-bit-value and does not need to be dealed.
+        OP_TOALTSTACK
+        for i in 1..DIGITS_NUM-1{
+            // STACK:[a,b]  OP_LSHIFT:Logical left shift b bits. Sign data is discarded
+            {DIGITS_BITSIZE} 
+            OP_SWAP 
+            OP_LSHIFT
+            OP_FROMALTSTACK
+            OP_ADD
+            OP_TOALTSTACK
+        }
+        // The ADD operation happened at the final maybe exceed MOD, using u31_ADD here.
+        {DIGITS_BITSIZE} 
+        OP_SWAP 
+        OP_LSHIFT
+        OP_FROMALTSTACK
+        {u31_add::<M>()}
+    }
+}
+
+pub fn convert_digits_to_u32<const DIGITS_BITSIZE:usize,const DIGITS_NUM:usize>() -> Script{
+    //0x87654321; 
+    // The stack before convert_D_to_u31 looks like(DIGITS_BITSIZE=8,DIGITS_NUM=4 ): 
+    // 0x21 
+    // 0x43 
+    // 0x65 
+    // 0x87 
+    script!{
+        // The Top Element of the stack is the lowest-bit-value and does not need to be dealed.
+        OP_TOALTSTACK
+        for i in 1..DIGITS_NUM{
+            // STACK:[a,b]  OP_LSHIFT:Logical left shift b bits. Sign data is discarded
+            {DIGITS_BITSIZE} 
+            OP_SWAP 
+            OP_LSHIFT
+            OP_FROMALTSTACK
+            OP_ADD
+            OP_TOALTSTACK
+        }
+    }
+}
+
 // y_0(r)= g_0,1(r^2) + r g_0,2(r^2)
 // y_0(-r)= g_0,1(r^2) -r g_0,2(r^2)
 // y_1(r^2) = g_0,1(r^2) + v_0 g_0,2(r^2)
@@ -151,10 +207,45 @@ pub fn fold_degree<M: U31Config, F: NativeField>(
 #[cfg(test)]
 mod test {
     use crate::execute_script;
+    use bitcoin::{opcodes::OP_EQUAL, Script};
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha20Rng;
 
     use super::*;
+
+    #[test]
+    fn test_convert_digits_to_u32(){
+
+        // check LSHIFT 
+        let shift_script = script!{
+            {8 as u32}
+            {20 as u32}// 0x14
+            // OP_RSHIFT
+            {(20*256) as u32} // 0x1400 => 0x0014 
+            OP_EQUAL
+        };
+
+        // let shift_script = Script::parse_asm("OP_PUSHNUM_8 OP_PUSHBYTES_1 14 OP_LSHIFT OP_PUSHBYTES_2 1400 OP_EQUAL").unwrap();
+            // shift_script
+        println!("{:?}",shift_script.clone());
+        let exec_result = execute_script(shift_script);
+        assert!(exec_result.success);
+        let script = script!{
+            0x87
+            0x65 
+            0x43
+            0x21 
+  
+            {convert_digits_to_u32::<8,N0>()}
+            OP_FROMALTSTACK
+            0x87654321 OP_EQUAL
+        };
+
+        println!("{:?}",script);
+
+        let exec_result = execute_script(script);
+        assert!(exec_result.success);
+    }
 
     #[test]
     fn test_u32_add() {

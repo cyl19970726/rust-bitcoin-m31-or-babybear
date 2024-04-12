@@ -15,6 +15,7 @@
 // BEAT OUR IMPLEMENTATION AND WIN A CODE GOLF BOUNTY!
 //
 
+use crate::{convert_digits_to_u31, convert_digits_to_u32, BabyBear};
 pub use crate::execute_script;
 pub use bitcoin_script::{define_pushable, script};
 
@@ -47,7 +48,8 @@ use hex::decode as hex_decode;
 // pub const N: u32 = N0 + N1 as u32;
 
 /// Bits per digit
-const LOG_D: u32 = 4;
+pub const LOG_D: u32 = 4;
+pub const LOG_D_usize: usize = 4;
 /// Digits are base d+1
 pub const D: u32 = (1 << LOG_D) - 1;
 /// Number of digits of the message (8x15=120 checksum need 7bits(2 digits))
@@ -282,9 +284,17 @@ pub fn checksig_verify(pub_key: &[Vec<u8>]) -> Script {
     }
 }
 
+pub fn convert_messsage_digits_to_u31() -> Script{
+    convert_digits_to_u31::<BabyBear,LOG_D_usize,N0>()
+}
+
+pub fn convert_messsage_digits_to_u32() -> Script{
+    convert_digits_to_u32::<LOG_D_usize,N0>()
+}
+
 #[cfg(test)]
 mod test {
-    use bitcoin::{amount::CheckedSum, ecdsa::Signature, opcodes::OP_EQUAL};
+    use bitcoin::{amount::CheckedSum, ecdsa::Signature, opcodes::{OP_EQUAL, OP_FROMALTSTACK}};
 
     use crate::execute_script_with_inputs;
 
@@ -301,6 +311,34 @@ mod test {
         assert_eq!(sum, 84);
         let checksum_digits = to_digits::<N1>(checksum(message_digits)).to_vec();
         assert_eq!(checksum_digits, vec![4, 5]);
+    }
+
+    #[test]
+    fn test_for_convert_to_u31(){
+        let origin_value: u32 = 0x87654321;
+        let message = to_digits::<N0>(origin_value);
+        const MESSAGE: [u8; N0 as usize] = [1, 2, 3, 4, 5, 6, 7, 8];
+        assert_eq!(message, MESSAGE);
+
+        let mut pubkey = Vec::new();
+        for i in 0..N {
+            pubkey.push(public_key(MY_SECKEY, i as u32));
+        }
+
+        let script = script! {
+            { sign_script(MY_SECKEY, MESSAGE) } // digit 0 = [checkum hash_i]
+            { checksig_verify(pubkey.as_slice()) }// using secret key to generate pubkey
+            { convert_messsage_digits_to_u32()}
+            OP_FROMALTSTACK
+            0x87654321 OP_EQUAL
+        };
+
+        println!(
+            "Winternitz signature size: {:?} bytes per 80 bits",
+            script.as_bytes().len()
+        );
+        let exec_result = execute_script(script);
+        assert!(exec_result.success);
     }
 
     #[test]

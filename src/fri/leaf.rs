@@ -9,13 +9,48 @@ use std::marker::PhantomData;
 use std::usize;
 
 use super::bit_commitment::*;
+use super::NativeField;
 use bitcoin::hashes::{hash160, Hash};
 use bitcoin::opcodes::{OP_EQUAL, OP_EQUALVERIFY, OP_SWAP};
 use bitcoin::ScriptBuf as Script;
 use bitcoin_script::{define_pushable, script};
 define_pushable!();
 
-use super::NativeField;
+pub struct VerifyFoldingLeaf<'a, const NUM_POLY: usize, F: NativeField> {
+    x: F,
+    y_0_x_commitment: &'a BitCommitment<F>,
+    y_0_neg_x_commitment: &'a BitCommitment<F>,
+    y_1_x_square_commitment: &'a BitCommitment<F>,
+}
+
+impl<'a, const NUM_POLY: usize, F: NativeField> VerifyFoldingLeaf<'a, NUM_POLY, F> {
+    fn new(
+        x: F,
+        y_0_x_commitment: &'a BitCommitment<F>,
+        y_0_neg_x_commitment: &'a BitCommitment<F>,
+        y_1_x_square_commitment: &'a BitCommitment<F>,
+    ) -> Self {
+        VerifyFoldingLeaf {
+            x,
+            y_0_x_commitment,
+            y_0_neg_x_commitment,
+            y_1_x_square_commitment,
+        }
+    }
+
+    // fn leaf_script(&self) -> Script{
+
+    // }
+
+    pub fn check_equal_script(&self) -> Script {
+        script! {
+            for i in 0..N0/2{
+                {self.y_0_x_commitment.commit_message[ N0 / 2 - 1 - i]} OP_EQUALVERIFY
+            }
+        }
+    }
+}
+
 pub struct EvaluationLeaf<const NUM_POLY: usize, F: NativeField> {
     leaf_index: usize,
     x: F,

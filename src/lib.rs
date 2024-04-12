@@ -11,7 +11,22 @@ pub use u31_ext::*;
 
 mod fri;
 pub use fri::*;
+
+mod u32;
+pub use u32::*;
+
+pub mod pseudo;
 define_pushable!();
+
+#[allow(dead_code)]
+// Re-export what is needed to write treepp scripts
+pub mod treepp {
+    pub use crate::execute_script;
+    pub use bitcoin_script::{define_pushable, script};
+
+    define_pushable!();
+    pub use bitcoin::ScriptBuf as Script;
+}
 
 pub fn unroll<F, T>(count: u32, mut closure: F) -> Vec<T>
 where
