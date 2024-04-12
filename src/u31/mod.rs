@@ -1,7 +1,10 @@
+use crate::fri::NativeField;
 use crate::{pushable, unroll};
-use bitcoin::ScriptBuf as Script;
+use bitcoin::{
+    opcodes::{OP_FROMALTSTACK, OP_TOALTSTACK},
+    ScriptBuf as Script,
+};
 use bitcoin_script::script;
-
 mod m31;
 pub use m31::*;
 
@@ -98,6 +101,53 @@ pub fn u31_mul<M: U31Config>() -> Script {
     }
 }
 
+// y_0(r)= g_0,1(r^2) + r g_0,2(r^2)
+// y_0(-r)= g_0,1(r^2) -r g_0,2(r^2)
+// y_1(r^2) = g_0,1(r^2) + v_0 g_0,2(r^2)
+pub fn fold_degree<M: U31Config, F: NativeField>(
+    degree: u32,
+    x: F,
+    y_0_x: F,
+    y_0_neg_x: F,
+    v_0: F,
+    y_1_x_quare: F,
+) -> Script {
+    script! {
+
+        // calculate 2 * g_0,1(r^2)
+        {y_0_x.as_u32()}
+        {y_0_neg_x.as_u32()}
+        { u31_add::<M>() }
+        // calculate 2 * r * g_0,1(r^2)
+        { x.as_u32()}
+        { u31_mul::<M>()}
+        OP_TOALTSTACK
+
+        // calculate 2 * r * g_0,2(r^2)
+        {y_0_x.as_u32()}
+        {y_0_neg_x.as_u32()}
+        { u31_sub::<M>() }
+        // calculate 2 * r * v_0 * g_0,2(r^2)
+        {v_0.as_u32()}
+        {u31_mul::<M>()}
+        OP_FROMALTSTACK
+        { u31_add::<M>() }
+        OP_TOALTSTACK
+
+        // calculate 2*r*y_1(r^2)
+        {y_1_x_quare.as_u32()}
+        {u31_double::<M>()}
+        {x.as_u32()}
+        {u31_mul::<M>()}
+
+        // Check Equal
+        // y_1(r^2) = g_0,1(r^2) + v_0 g_0,2(r^2)
+        // 2r y_1(r^2) = 2r g_0,1(r^2) + 2r v_0 g_0,2(r^2)
+        OP_FROMALTSTACK
+        OP_EQUAL
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::execute_script;
@@ -105,6 +155,25 @@ mod test {
     use rand_chacha::ChaCha20Rng;
 
     use super::*;
+
+    #[test]
+    fn test_u32_add() {
+        let v1: u32 = 0x1BCDEF12;
+        let v2: u32 = 0x1BCDEF00;
+        let v1_babybear = v1 % BabyBear::MOD;
+        let v2_babybear = v2 % BabyBear::MOD;
+        let sum_babybear = (v1_babybear + v2_babybear) % BabyBear::MOD;
+        let script = script! {
+            { v1_babybear }
+            { v2_babybear }
+            { u31_add::<M31>() }
+            { sum_babybear }
+            OP_EQUAL
+        };
+        println!("{:}", script);
+        let exec_result = execute_script(script);
+        assert!(exec_result.success);
+    }
 
     #[test]
     fn test_u31_add() {
