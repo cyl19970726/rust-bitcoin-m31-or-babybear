@@ -15,8 +15,8 @@
 // BEAT OUR IMPLEMENTATION AND WIN A CODE GOLF BOUNTY!
 //
 
-use crate::{convert_digits_to_u31, convert_digits_to_u32, BabyBear};
 pub use crate::execute_script;
+use crate::{convert_digits_to_u31, convert_digits_to_u32, BabyBear};
 pub use bitcoin_script::{define_pushable, script};
 
 define_pushable!();
@@ -284,17 +284,21 @@ pub fn checksig_verify(pub_key: &[Vec<u8>]) -> Script {
     }
 }
 
-pub fn convert_messsage_digits_to_u31() -> Script{
-    convert_digits_to_u31::<BabyBear,LOG_D_usize,N0>()
+pub fn convert_messsage_digits_to_u31() -> Script {
+    convert_digits_to_u31::<BabyBear, LOG_D_usize, N0>()
 }
 
-pub fn convert_messsage_digits_to_u32() -> Script{
-    convert_digits_to_u32::<LOG_D_usize,N0>()
+pub fn convert_messsage_digits_to_u32() -> Script {
+    convert_digits_to_u32::<LOG_D_usize, N0>()
 }
 
 #[cfg(test)]
 mod test {
-    use bitcoin::{amount::CheckedSum, ecdsa::Signature, opcodes::{OP_EQUAL, OP_FROMALTSTACK}};
+    use bitcoin::{
+        amount::CheckedSum,
+        ecdsa::Signature,
+        opcodes::{OP_EQUAL, OP_FROMALTSTACK},
+    };
 
     use crate::execute_script_with_inputs;
 
@@ -314,7 +318,7 @@ mod test {
     }
 
     #[test]
-    fn test_for_convert_to_u31(){
+    fn test_for_convert_to_u31() {
         let origin_value: u32 = 0x87654321;
         let message = to_digits::<N0>(origin_value);
         const MESSAGE: [u8; N0 as usize] = [1, 2, 3, 4, 5, 6, 7, 8];
