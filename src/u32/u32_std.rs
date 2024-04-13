@@ -7,10 +7,10 @@ use crate::treepp::{pushable, script, Script};
 /// Pushes a value as u32 element onto the stack
 pub fn u32_push(value: u32) -> Script {
     script! {
-        {value >> 24 & 0xff}
+        {value >> 24 & 0xff} // high position
         {value >> 16 & 0xff}
         {value >>  8 & 0xff}
-        {value >>  0 & 0xff}
+        {value >>  0 & 0xff} // low position
     }
 }
 
@@ -121,11 +121,23 @@ pub fn u32_pick(n: u32) -> Script {
 
 /// The top u32 element is compressed into a single 4-byte word
 pub fn u32_compress() -> Script {
+    // input origin value: 0x87654321
+    // the input stack state is:
+    // 21
+    // 43
+    // 56
+    // 87
     script! {
         OP_SWAP
-        OP_ROT
+        OP_ROT // The 3rd item down the stack is moved to the top.
         3
-        OP_ROLL
+        OP_ROLL // The item n back in the stack is moved to the top.
+        // At there the stack is reversed as:
+        // 87
+        // 56
+        // 43
+        // 21
+
         OP_DUP
         127
         OP_GREATERTHAN
@@ -137,12 +149,25 @@ pub fn u32_compress() -> Script {
             0
         OP_ENDIF
         OP_TOALTSTACK
+        // the below calculate the mark
+
+
+         //the stack state is:
+        // 87
+        // 56
+        // 43
+        // 21
         OP_256MUL
         OP_ADD
+        // 0x87 * 256 + 0x56 = r1
         OP_256MUL
         OP_ADD
+        // r1 * 256 + 0x43 = r2
+
         OP_256MUL
         OP_ADD
+        // r2 * 256 + 0x21  = result
+
         OP_FROMALTSTACK
         OP_IF
             OP_NEGATE
@@ -152,6 +177,8 @@ pub fn u32_compress() -> Script {
 
 #[cfg(test)]
 mod test {
+
+    use rand::Rng;
 
     use crate::treepp::{execute_script, script};
     use crate::u32::u32_std::*;
@@ -171,5 +198,34 @@ mod test {
         };
 
         assert!(execute_script(script).success)
+    }
+
+    #[test]
+    fn test_wtih_u32_compress() {
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..30 {
+            let mut origin_value0: u32 = rng.gen();
+            origin_value0 = origin_value0 % 1 << 31;
+            let mut origin_value1: u32 = rng.gen();
+            origin_value0 = origin_value1 % 1 << 31;
+
+            let v = origin_value0 + origin_value1;
+
+            let script = script! {
+                { u32_push(origin_value0)}
+                { u32_compress()}
+                { u32_push(origin_value1)}
+                { u32_compress()}
+                OP_ADD
+                { u32_push(v)}
+                { u32_compress()}
+                OP_EQUAL
+
+            };
+
+            let exec_result = execute_script(script);
+            assert!(exec_result.success);
+        }
     }
 }
