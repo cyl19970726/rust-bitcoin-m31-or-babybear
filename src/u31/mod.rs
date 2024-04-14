@@ -12,7 +12,7 @@ mod m31;
 pub use m31::*;
 
 mod babybear;
-pub use babybear::*;
+pub use babybear::BabyBearU31;
 
 use crate::fri::bit_commitment::{LOG_D_usize, D, LOG_D, N, N0, N1};
 
@@ -214,17 +214,15 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_folding_poly(){
-        
-    }
+    fn test_folding_poly() {}
 
     #[test]
     fn test_u32_add() {
         let v1: u32 = 0x1BCDEF12;
         let v2: u32 = 0x1BCDEFf0;
-        let v1_babybear = v1 % BabyBear::MOD;
-        let v2_babybear = v2 % BabyBear::MOD;
-        let sum_babybear = (v1_babybear + v2_babybear) % BabyBear::MOD;
+        let v1_babybear = v1 % BabyBearU31::MOD;
+        let v2_babybear = v2 % BabyBearU31::MOD;
+        let sum_babybear = (v1_babybear + v2_babybear) % BabyBearU31::MOD;
         let script = script! {
             { v1_babybear }
             { v2_babybear }
@@ -240,7 +238,7 @@ mod test {
     #[test]
     fn test_u31_add() {
         let mut prng = ChaCha20Rng::seed_from_u64(0u64);
-        eprintln!("u31 add: {}", u31_add::<BabyBear>().len());
+        eprintln!("u31 add: {}", u31_add::<BabyBearU31>().len());
 
         for _ in 0..100 {
             let a: u32 = prng.gen();
@@ -265,14 +263,14 @@ mod test {
             let a: u32 = prng.gen();
             let b: u32 = prng.gen();
 
-            let a_babybear = a % BabyBear::MOD;
-            let b_babybear = b % BabyBear::MOD;
-            let sum_babybear = (a_babybear + b_babybear) % BabyBear::MOD;
+            let a_babybear = a % BabyBearU31::MOD;
+            let b_babybear = b % BabyBearU31::MOD;
+            let sum_babybear = (a_babybear + b_babybear) % BabyBearU31::MOD;
 
             let script = script! {
                 { a_babybear }
                 { b_babybear }
-                { u31_add::<BabyBear>() }
+                { u31_add::<BabyBearU31>() }
                 { sum_babybear }
                 OP_EQUAL
             };
@@ -284,7 +282,7 @@ mod test {
     #[test]
     fn test_u31_sub() {
         let mut prng = ChaCha20Rng::seed_from_u64(0u64);
-        eprintln!("u31 sub: {}", u31_sub::<BabyBear>().len());
+        eprintln!("u31 sub: {}", u31_sub::<BabyBearU31>().len());
 
         for _ in 0..100 {
             let a: u32 = prng.gen();
@@ -309,14 +307,14 @@ mod test {
             let a: u32 = prng.gen();
             let b: u32 = prng.gen();
 
-            let a_babybear = a % BabyBear::MOD;
-            let b_babybear = b % BabyBear::MOD;
-            let diff_babybear = (BabyBear::MOD + a_babybear - b_babybear) % BabyBear::MOD;
+            let a_babybear = a % BabyBearU31::MOD;
+            let b_babybear = b % BabyBearU31::MOD;
+            let diff_babybear = (BabyBearU31::MOD + a_babybear - b_babybear) % BabyBearU31::MOD;
 
             let script = script! {
                 { a_babybear }
                 { b_babybear }
-                { u31_sub::<BabyBear>() }
+                { u31_sub::<BabyBearU31>() }
                 { diff_babybear }
                 OP_EQUAL
             };
@@ -355,7 +353,7 @@ mod test {
 
         for _ in 0..100 {
             let a: u32 = prng.gen();
-            let babybear = a % BabyBear::MOD;
+            let babybear = a % BabyBearU31::MOD;
 
             let mut bits = vec![];
             let mut cur = babybear;
@@ -381,7 +379,7 @@ mod test {
     #[test]
     fn test_u31_mul() {
         let mut prng = ChaCha20Rng::seed_from_u64(6u64);
-        eprintln!("u31 mul: {}", u31_mul::<BabyBear>().len());
+        eprintln!("u31 mul: {}", u31_mul::<BabyBearU31>().len());
 
         for _ in 0..100 {
             let a: u32 = prng.gen();
@@ -407,16 +405,16 @@ mod test {
             let a: u32 = prng.gen();
             let b: u32 = prng.gen();
 
-            let a_babybear = a % BabyBear::MOD;
-            let b_babybear = b % BabyBear::MOD;
+            let a_babybear = a % BabyBearU31::MOD;
+            let b_babybear = b % BabyBearU31::MOD;
             let prod_babybear = ((((a_babybear as u64) * (b_babybear as u64))
-                % (BabyBear::MOD as u64))
+                % (BabyBearU31::MOD as u64))
                 & 0xffffffff) as u32;
 
             let script = script! {
                 { a_babybear }
                 { b_babybear }
-                { u31_mul::<BabyBear>() }
+                { u31_mul::<BabyBearU31>() }
                 { prod_babybear }
                 OP_EQUAL
             };

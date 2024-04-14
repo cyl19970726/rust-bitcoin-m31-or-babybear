@@ -1,4 +1,4 @@
-use crate::u31::{u31_add, u31_double, BabyBear};
+use crate::u31::{u31_add, u31_double, BabyBearU31 as BabyBear};
 use crate::U31ExtConfig;
 use crate::{karatsuba_big, pushable};
 use bitcoin::ScriptBuf as Script;

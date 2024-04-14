@@ -16,7 +16,7 @@
 //
 
 pub use crate::execute_script;
-use crate::{convert_digits_to_u31, convert_digits_to_u32, BabyBear};
+use crate::{convert_digits_to_u31, convert_digits_to_u32, BabyBearU31 as BabyBear};
 pub use bitcoin_script::{define_pushable, script};
 
 define_pushable!();
